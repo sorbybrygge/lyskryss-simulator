@@ -1,0 +1,710 @@
+<title>Lyskryss-simulator</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Barlow+Condensed:wght@500;600;700&family=Barlow:wght@400;500;600&display=swap">
+<style>
+/* Layout: top-down road map on the left, signal-controller cabinet panel on the right; stacks on phones. */
+:root {
+  --bg: #e7ebee;
+  --surface: #f6f8f9;
+  --fg: #18212a;
+  --muted: #586572;
+  --line: #ccd4da;
+  --accent: #1d5fa8;          /* road-sign blue */
+  --sig-red: #d93a2b;
+  --sig-yel: #e9a512;
+  --sig-grn: #1f9d5c;
+  --font-display: "Barlow Condensed", "Arial Narrow", "Roboto Condensed", sans-serif;
+  --font-body: "Barlow", "Segoe UI", system-ui, sans-serif;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --bg: #11161b; --surface: #192027; --fg: #e4eaef; --muted: #93a1ad; --line: #2a343d;
+    --accent: #6ea9ec; --sig-red: #f0604f; --sig-yel: #f4bd3a; --sig-grn: #3fcf86; color-scheme: dark;
+  }
+}
+:root[data-theme="dark"] {
+  --bg: #11161b; --surface: #192027; --fg: #e4eaef; --muted: #93a1ad; --line: #2a343d;
+  --accent: #6ea9ec; --sig-red: #f0604f; --sig-yel: #f4bd3a; --sig-grn: #3fcf86; color-scheme: dark;
+}
+
+* { box-sizing: border-box; }
+body {
+  background: var(--bg); color: var(--fg);
+  font-family: var(--font-body); font-size: 15px; line-height: 1.45;
+  padding-block: 20px 32px;
+  padding-left: max(16px, env(safe-area-inset-left, 0px));
+  padding-right: max(16px, env(safe-area-inset-right, 0px));
+}
+.wrap { max-width: 1160px; margin: 0 auto; display: grid; gap: 18px; }
+
+header { display: flex; flex-wrap: wrap; gap: 12px 24px; align-items: end; justify-content: space-between; }
+header .titles { min-width: 0; max-width: 62ch; }
+h1 { font-family: var(--font-display); font-weight: 700; font-size: clamp(30px, 5vw, 44px); line-height: 1; margin: 0 0 6px; letter-spacing: 0.01em; text-wrap: balance; }
+h1 .tag { display: inline-block; background: var(--accent); color: #fff; font-size: 0.42em; padding: 3px 8px 2px; border-radius: 3px; vertical-align: middle; letter-spacing: 0.08em; text-transform: uppercase; margin-left: 8px; transform: translateY(-4px); }
+.lede { margin: 0; color: var(--muted); }
+
+.layout { display: grid; grid-template-columns: minmax(0, 1fr) 330px; gap: 18px; align-items: start; }
+@media (max-width: 880px) { .layout { grid-template-columns: minmax(0, 1fr); } }
+
+.map { position: relative; width: 100%; max-width: 820px; justify-self: center; }
+#cv { display: block; width: 100%; aspect-ratio: 1 / 1; max-width: 100%; border-radius: 6px; background: #5f7a52; }
+
+.panel { background: var(--surface); border: 1px solid var(--line); border-radius: 8px; display: grid; min-width: 0; }
+.panel > section { padding: 16px 18px; border-top: 1px solid var(--line); display: grid; gap: 10px; min-width: 0; }
+.panel > section:first-child { border-top: 0; }
+.eyebrow { font-family: var(--font-display); font-weight: 600; font-size: 13px; text-transform: uppercase; letter-spacing: 0.12em; color: var(--muted); margin: 0; }
+h2.eyebrow { margin: 0; }
+
+.now-phase { font-family: var(--font-display); font-weight: 600; font-size: 24px; line-height: 1.1; margin: 0; text-wrap: balance; }
+.now-row { display: flex; align-items: center; justify-content: space-between; gap: 10px; }
+.timer { font-family: var(--font-display); font-size: 22px; font-weight: 600; font-variant-numeric: tabular-nums; }
+.bar { height: 6px; background: var(--line); border-radius: 3px; overflow: hidden; }
+.bar i { display: block; height: 100%; width: 0; background: var(--accent); }
+.note { margin: 0; color: var(--muted); font-size: 13.5px; }
+
+.chip { display: inline-flex; align-items: center; gap: 6px; font-family: var(--font-display); font-weight: 600; font-size: 14px; letter-spacing: 0.04em; text-transform: uppercase; padding: 3px 9px 2px; border-radius: 999px; border: 1px solid var(--line); color: var(--muted); white-space: nowrap; }
+.chip::before { content: ""; width: 8px; height: 8px; border-radius: 50%; background: var(--sig-red); }
+.chip[data-s="g"] { color: var(--sig-grn); border-color: color-mix(in srgb, var(--sig-grn) 45%, transparent); }
+.chip[data-s="g"]::before { background: var(--sig-grn); }
+.chip[data-s="y"] { color: var(--sig-yel); border-color: color-mix(in srgb, var(--sig-yel) 50%, transparent); }
+.chip[data-s="y"]::before { background: var(--sig-yel); }
+.chip[data-s="ry"] { color: var(--sig-yel); }
+.chip[data-s="ry"]::before { background: linear-gradient(90deg, var(--sig-red) 50%, var(--sig-yel) 50%); }
+.chip[data-s="r"], .chip[data-s="ar"] { color: var(--sig-red); }
+
+ol.phases { list-style: none; margin: 0; padding: 0; display: grid; gap: 4px; }
+ol.phases li { display: grid; grid-template-columns: 22px 40px minmax(0, 1fr) auto; gap: 10px; align-items: center; padding: 6px 8px; border-radius: 6px; border: 1px solid transparent; }
+ol.phases li.active { border-color: var(--line); background: var(--bg); }
+ol.phases li.skipped { opacity: 0.55; }
+.pnum { font-family: var(--font-display); font-weight: 700; font-size: 18px; color: var(--muted); text-align: center; font-variant-numeric: tabular-nums; }
+li.active .pnum { color: var(--accent); }
+.pname { font-size: 14px; line-height: 1.25; min-width: 0; }
+.pict { width: 40px; height: 40px; display: block; }
+.pict .road { fill: var(--line); }
+.pict .mv { fill: none; stroke: var(--fg); stroke-width: 2.4; stroke-linecap: round; stroke-linejoin: round; }
+
+.ctl { display: grid; grid-template-columns: 96px minmax(0, 1fr); gap: 8px 12px; align-items: center; }
+.ctl label, .ctl .lbl { font-size: 13.5px; color: var(--muted); }
+.seg { display: inline-flex; border: 1px solid var(--line); border-radius: 6px; overflow: hidden; flex-wrap: wrap; }
+.seg button { font: inherit; font-size: 13.5px; background: transparent; color: var(--fg); border: 0; border-left: 1px solid var(--line); padding: 5px 10px; cursor: pointer; font-variant-numeric: tabular-nums; }
+.seg button:first-child { border-left: 0; }
+.seg button[aria-pressed="true"] { background: var(--accent); color: #fff; }
+.seg button:hover:not([aria-pressed="true"]) { background: var(--bg); }
+button:focus-visible, input:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+.play { font-family: var(--font-display); font-weight: 600; font-size: 16px; letter-spacing: 0.06em; text-transform: uppercase; background: var(--fg); color: var(--surface); border: 0; border-radius: 6px; padding: 9px 14px; cursor: pointer; }
+.range-row { display: flex; gap: 10px; align-items: center; min-width: 0; }
+.range-row input { flex: 1; min-width: 0; accent-color: var(--accent); }
+.range-row output { font-variant-numeric: tabular-nums; font-size: 13.5px; width: 3.2em; text-align: right; }
+
+.stats { grid-template-columns: 1fr 1fr; }
+.stat .v { font-family: var(--font-display); font-weight: 700; font-size: 30px; line-height: 1; font-variant-numeric: tabular-nums; }
+.stat .k { font-size: 13px; color: var(--muted); }
+
+.seq { display: flex; gap: 6px; align-items: end; flex-wrap: wrap; }
+.seq figure { margin: 0; display: grid; justify-items: center; gap: 4px; }
+.seq figcaption { font-size: 11.5px; color: var(--muted); text-align: center; }
+.head { width: 16px; background: #15191d; border-radius: 4px; padding: 3px; display: grid; gap: 3px; }
+.head span { width: 10px; height: 10px; border-radius: 50%; background: #2c3136; }
+.head .r.on { background: #f0503e; box-shadow: 0 0 6px #f0503e; }
+.head .y.on { background: #f6b52a; box-shadow: 0 0 6px #f6b52a; }
+.head .g.on { background: #34d17f; box-shadow: 0 0 6px #34d17f; }
+.seq .arrow { color: var(--muted); font-size: 12px; padding-bottom: 26px; }
+
+.lang { display: inline-flex; }
+.defs { position: absolute; width: 0; height: 0; overflow: hidden; }
+</style>
+
+<svg class="defs" aria-hidden="true" focusable="false">
+  <defs>
+    <marker id="ah" viewBox="0 0 10 10" refX="4" refY="5" markerWidth="3.2" markerHeight="3.2" orient="auto">
+      <path d="M0 0 L10 5 L0 10 z" style="fill: var(--fg)"></path>
+    </marker>
+  </defs>
+</svg>
+
+<div class="wrap">
+  <header>
+    <div class="titles">
+      <h1><span data-i18n="title">Lyskryss</span><span class="tag" data-i18n="tag">Simulator</span></h1>
+      <p class="lede" data-i18n="lede"></p>
+    </div>
+    <div class="seg lang" role="group" aria-label="Språk / Language">
+      <button type="button" id="lang-no" data-lang="no" aria-pressed="true">Norsk</button>
+      <button type="button" id="lang-en" data-lang="en" aria-pressed="false">English</button>
+    </div>
+  </header>
+
+  <div class="layout">
+    <div class="map">
+      <canvas id="cv" role="img" aria-label="Firevegskryss sett ovenfra med biler og trafikklys"></canvas>
+    </div>
+
+    <aside class="panel">
+      <section aria-live="polite">
+        <p class="eyebrow" id="nowLabel"></p>
+        <p class="now-phase" id="nowPhase"></p>
+        <div class="now-row">
+          <span class="chip" id="stageChip" data-s="g"></span>
+          <span class="timer" id="timer"></span>
+        </div>
+        <div class="bar"><i id="barFill"></i></div>
+        <p class="note" id="modeNote"></p>
+      </section>
+
+      <section>
+        <h2 class="eyebrow" data-i18n="phases"></h2>
+        <ol class="phases" id="phaseList"></ol>
+      </section>
+
+      <section>
+        <div class="ctl">
+          <span class="lbl" data-i18n="sim"></span>
+          <div><button type="button" class="play" id="playBtn"></button></div>
+
+          <span class="lbl" data-i18n="speed"></span>
+          <div class="seg" role="group" id="speedSeg">
+            <button type="button" id="sp-05" data-speed="0.5" aria-pressed="false">½×</button>
+            <button type="button" id="sp-1" data-speed="1" aria-pressed="true">1×</button>
+            <button type="button" id="sp-2" data-speed="2" aria-pressed="false">2×</button>
+            <button type="button" id="sp-4" data-speed="4" aria-pressed="false">4×</button>
+          </div>
+
+          <label for="density" data-i18n="density"></label>
+          <div class="range-row">
+            <input type="range" id="density" min="0.3" max="2" step="0.1" value="1">
+            <output id="densityOut" for="density">100 %</output>
+          </div>
+
+          <span class="lbl" data-i18n="mode"></span>
+          <div class="seg" role="group" id="modeSeg">
+            <button type="button" id="mode-act" data-mode="actuated" aria-pressed="true" data-i18n="actuated"></button>
+            <button type="button" id="mode-fix" data-mode="fixed" aria-pressed="false" data-i18n="fixed"></button>
+          </div>
+        </div>
+      </section>
+
+      <section class="stats">
+        <div class="stat"><div class="v" id="statPassed">0</div><div class="k" data-i18n="passed"></div></div>
+        <div class="stat"><div class="v" id="statWaiting">0</div><div class="k" data-i18n="waiting"></div></div>
+      </section>
+
+      <section>
+        <h2 class="eyebrow" data-i18n="seqTitle"></h2>
+        <div class="seq" aria-hidden="true">
+          <figure><div class="head"><span class="r on"></span><span class="y"></span><span class="g"></span></div><figcaption data-i18n="sR"></figcaption></figure>
+          <span class="arrow">›</span>
+          <figure><div class="head"><span class="r on"></span><span class="y on"></span><span class="g"></span></div><figcaption data-i18n="sRY"></figcaption></figure>
+          <span class="arrow">›</span>
+          <figure><div class="head"><span class="r"></span><span class="y"></span><span class="g on"></span></div><figcaption data-i18n="sG"></figcaption></figure>
+          <span class="arrow">›</span>
+          <figure><div class="head"><span class="r"></span><span class="y on"></span><span class="g"></span></div><figcaption data-i18n="sY"></figcaption></figure>
+          <span class="arrow">›</span>
+          <figure><div class="head"><span class="r on"></span><span class="y"></span><span class="g"></span></div><figcaption data-i18n="sR"></figcaption></figure>
+        </div>
+        <p class="note" data-i18n="seqText"></p>
+        <p class="note" data-i18n="laneText"></p>
+      </section>
+    </aside>
+  </div>
+</div>
+
+<script>
+(() => {
+  // ---------- Text ----------
+  const TXT = {
+    no: {
+      title: "Lyskryss", tag: "Simulator",
+      lede: "Firevegskryss med to felt i hver retning. Signalanlegget styrer fire faser, og venstresving har egne piler så ingen kjøremønstre krysser hverandre.",
+      now: "Fase {n} av 4", phases: "Faser", sim: "Simulering", play: "Start", pause: "Pause",
+      speed: "Tempo", density: "Trafikk", mode: "Styring", actuated: "Behovsstyrt", fixed: "Fast tid",
+      passed: "biler kjørt gjennom", waiting: "biler venter nå",
+      seqTitle: "Signalrekkefølge", sR: "Rødt", sRY: "Rødt + gult", sG: "Grønt", sY: "Gult",
+      seqText: "Før grønt lyser rødt og gult sammen. Etter gult er alle lys røde et øyeblikk, så biler som kjørte på gult kommer seg ut av krysset før neste fase.",
+      laneText: "Venstre felt er kun for venstresving. Høyre felt er for rett fram og høyresving.",
+      stage: { ry: "Rødt + gult", g: "Grønt", y: "Gult", ar: "Alt rødt" },
+      state: { r: "Rødt", ry: "Rødt + gult", g: "Grønt", y: "Gult", ar: "Rødt" },
+      names: ["Nord–sør, rett fram og høyre", "Nord–sør, venstresving", "Øst–vest, rett fram og høyre", "Øst–vest, venstresving"],
+      noteAct: "Grønt forlenges så lenge det kommer biler, og faser uten ventende biler hoppes over.",
+      noteFix: "Hver fase får fast grønntid i samme rekkefølge, uansett trafikk.",
+      maxLeft: "maks {s} s", aria: "Firevegskryss sett ovenfra med biler og trafikklys"
+    },
+    en: {
+      title: "Traffic Light", tag: "Simulator",
+      lede: "A four-way intersection with two lanes in each direction. The signal controller runs four phases, and left turns get their own arrows so no movements cross each other.",
+      now: "Phase {n} of 4", phases: "Phases", sim: "Simulation", play: "Start", pause: "Pause",
+      speed: "Speed", density: "Traffic", mode: "Control", actuated: "Actuated", fixed: "Fixed time",
+      passed: "cars through", waiting: "cars waiting now",
+      seqTitle: "Signal sequence", sR: "Red", sRY: "Red + amber", sG: "Green", sY: "Amber",
+      seqText: "Red and amber show together before green, as in Norway. After amber, every light is red for a moment so cars that went on amber clear the intersection before the next phase.",
+      laneText: "The left lane is for left turns only. The right lane is for straight ahead and right turns.",
+      stage: { ry: "Red + amber", g: "Green", y: "Amber", ar: "All red" },
+      state: { r: "Red", ry: "Red + amber", g: "Green", y: "Amber", ar: "Red" },
+      names: ["North–south, straight and right", "North–south, left turn", "East–west, straight and right", "East–west, left turn"],
+      noteAct: "Green is extended while cars keep arriving, and phases with no waiting cars are skipped.",
+      noteFix: "Each phase gets a fixed green time in the same order, whatever the traffic.",
+      maxLeft: "max {s} s", aria: "Top-down four-way intersection with cars and traffic lights"
+    }
+  };
+  let lang = "no";
+  try { const l = localStorage.getItem("lyskryss-lang"); if (l === "en" || l === "no") lang = l; } catch (e) {}
+  const t = () => TXT[lang];
+
+  // ---------- Geometry (logical canvas 800 x 800, right-hand traffic) ----------
+  const W = 800, C = 400, L = 28, R = 2 * L, STOP = R + 24, E = 440, SW = 16, RC = 20;
+  const CAR_LEN = 22, CAR_W = 12, VMAX = 95, V_LEFT = 55, V_RIGHT = 32;
+  const DEC = 110; // comfortable deceleration, px/s^2
+
+  // Approach k: 0 = from south (northbound), 1 = from west, 2 = from north, 3 = from east.
+  // Each approach is built in a local frame for the northbound case, then rotated k * 90 degrees.
+  function rot(x, y, k) { for (let i = 0; i < k; i++) { const nx = -y; y = x; x = nx; } return [x, y]; }
+
+  function buildPath(k, lane, move) {
+    const pts = [];
+    let turnStart = -1, turnEnd = -1;
+    const add = (x, y) => { const p = pts[pts.length - 1]; if (!p || Math.hypot(p[0] - x, p[1] - y) > 0.01) pts.push([x, y]); };
+    const line = (x0, y0, x1, y1) => { const n = Math.max(1, Math.ceil(Math.hypot(x1 - x0, y1 - y0) / 2)); for (let i = 0; i <= n; i++) add(x0 + (x1 - x0) * i / n, y0 + (y1 - y0) * i / n); };
+    const arc = (cx, cy, r, a0, a1) => { const n = Math.max(4, Math.ceil(Math.abs(a1 - a0) * r / 2)); for (let i = 0; i <= n; i++) { const a = a0 + (a1 - a0) * i / n; add(cx + r * Math.cos(a), cy + r * Math.sin(a)); } };
+    const x = lane === 0 ? L / 2 : 1.5 * L;
+    line(x, E, x, R);
+    const mark = () => pts.length - 1;
+    let iA, iB;
+    if (move === "S") { line(x, R, x, -E); }
+    else if (move === "L") { iA = mark(); arc(-R, R, R + L / 2, 0, -Math.PI / 2); iB = mark(); line(-R, -L / 2, -E, -L / 2); }
+    else { iA = mark(); arc(R, R, L / 2, Math.PI, 1.5 * Math.PI); iB = mark(); line(R, 1.5 * L, E, 1.5 * L); }
+    const n = pts.length, xs = new Float32Array(n), ys = new Float32Array(n), ss = new Float32Array(n);
+    for (let i = 0; i < n; i++) {
+      const [rx, ry] = rot(pts[i][0], pts[i][1], k);
+      xs[i] = C + rx; ys[i] = C + ry;
+      if (i) ss[i] = ss[i - 1] + Math.hypot(xs[i] - xs[i - 1], ys[i] - ys[i - 1]);
+    }
+    if (iA !== undefined) { turnStart = ss[iA]; turnEnd = ss[iB]; }
+    return { xs, ys, ss, n, len: ss[n - 1], sStop: E - STOP, turnStart, turnEnd, move };
+  }
+
+  const PATHS = {};
+  for (let k = 0; k < 4; k++) {
+    PATHS[k + "L"] = buildPath(k, 0, "L");
+    PATHS[k + "S"] = buildPath(k, 1, "S");
+    PATHS[k + "R"] = buildPath(k, 1, "R");
+  }
+
+  function posAt(p, s, out) {
+    let lo = 0, hi = p.n - 1;
+    if (s <= 0) lo = 0; else if (s >= p.len) lo = p.n - 2;
+    else { while (hi - lo > 1) { const m = (lo + hi) >> 1; if (p.ss[m] <= s) lo = m; else hi = m; } }
+    const i = Math.min(lo, p.n - 2), seg = p.ss[i + 1] - p.ss[i] || 1, f = Math.max(0, Math.min(1, (s - p.ss[i]) / seg));
+    const dx = p.xs[i + 1] - p.xs[i], dy = p.ys[i + 1] - p.ys[i], dl = Math.hypot(dx, dy) || 1;
+    out.x = p.xs[i] + dx * f; out.y = p.ys[i] + dy * f; out.hx = dx / dl; out.hy = dy / dl;
+  }
+
+  // ---------- Signal controller ----------
+  const PHASES = [
+    { group: "NS_T", gFix: 14, gMin: 6, gMax: 22 },
+    { group: "NS_L", gFix: 7, gMin: 4, gMax: 11 },
+    { group: "EW_T", gFix: 14, gMin: 6, gMax: 22 },
+    { group: "EW_L", gFix: 7, gMin: 4, gMax: 11 }
+  ];
+  const STAGE_T = { ry: 1.5, y: 3, ar: 1.5 };
+  const ctrl = { p: 0, stage: "g", t: 0, skipped: [false, false, false, false] };
+  let mode = "actuated";
+
+  function stageDur() { const ph = PHASES[ctrl.p]; return ctrl.stage === "g" ? (mode === "fixed" ? ph.gFix : ph.gMax) : STAGE_T[ctrl.stage]; }
+  function groupState(g) {
+    if (PHASES[ctrl.p].group !== g || ctrl.stage === "ar") return "r";
+    return ctrl.stage;
+  }
+  function demand(g, within) {
+    let n = 0;
+    for (const c of cars) if (c.group === g && !c.crossed && c.path.sStop - c.s < within) n++;
+    return n;
+  }
+  function stepCtrl(dt) {
+    ctrl.t += dt;
+    const ph = PHASES[ctrl.p];
+    const go = (st) => { ctrl.stage = st; ctrl.t = 0; };
+    if (ctrl.stage === "ry") { if (ctrl.t >= STAGE_T.ry) go("g"); }
+    else if (ctrl.stage === "g") {
+      if (mode === "fixed") { if (ctrl.t >= ph.gFix) go("y"); }
+      else if (ctrl.t >= ph.gMax || (ctrl.t >= ph.gMin && demand(ph.group, 130) === 0)) go("y");
+    }
+    else if (ctrl.stage === "y") { if (ctrl.t >= STAGE_T.y) go("ar"); }
+    else if (ctrl.t >= STAGE_T.ar) {
+      let next = (ctrl.p + 1) % 4;
+      ctrl.skipped = [false, false, false, false];
+      if (mode === "actuated") {
+        for (let i = 1; i <= 4; i++) {
+          const cand = (ctrl.p + i) % 4;
+          if (demand(PHASES[cand].group, 420) > 0 || i === 4) { next = cand; break; }
+          ctrl.skipped[cand] = true;
+        }
+        if (next === ctrl.p) { next = (ctrl.p + 1) % 4; ctrl.skipped = [false, false, false, false]; }
+      }
+      ctrl.p = next; go("ry");
+    }
+  }
+
+  // ---------- Cars ----------
+  const COLORS = ["#e9ecef", "#2b333c", "#b23a2e", "#2f5f93", "#8f969d", "#d9b23a", "#56704c", "#c7cdd3", "#4a3b5e", "#1f2a24"];
+  let cars = [], nextId = 1, passed = 0, density = 1;
+  const sources = [];
+  for (let k = 0; k < 4; k++) for (let lane = 0; lane < 2; lane++) sources.push({ k, lane, timer: Math.random() * 4 });
+  const tmp = { x: 0, y: 0, hx: 0, hy: 0 };
+
+  function rate(src) { return (src.lane === 0 ? 0.045 : 0.11) * density; }
+  function spawn(src) {
+    const move = src.lane === 0 ? "L" : (Math.random() < 0.3 ? "R" : "S");
+    const path = PATHS[src.k + move];
+    for (const c of cars) if (c.k === src.k && c.lane === src.lane && c.s < CAR_LEN * 2.2) return false;
+    const ns = src.k % 2 === 0 ? "NS" : "EW";
+    cars.push({
+      id: nextId++, k: src.k, lane: src.lane, path, s: 0, v: VMAX * 0.85,
+      len: CAR_LEN + (Math.random() < 0.12 ? 6 : 0), w: CAR_W,
+      color: COLORS[(Math.random() * COLORS.length) | 0],
+      group: ns + (move === "L" ? "_L" : "_T"), move,
+      crossed: false, committed: false, braking: false, stuck: 0, x: 0, y: 0, hx: 0, hy: -1
+    });
+    return true;
+  }
+
+  function idm(v, v0, gap, dv) {
+    const a = 70, T = 0.9, s0 = 5;
+    let acc = a * (1 - Math.pow(Math.max(v, 0) / v0, 4));
+    if (gap < Infinity) {
+      const sStar = s0 + Math.max(0, v * T + v * dv / (2 * Math.sqrt(a * DEC)));
+      acc -= a * Math.pow(sStar / Math.max(gap, 0.5), 2);
+    }
+    return Math.max(acc, -260);
+  }
+
+  function step(dt) {
+    stepCtrl(dt);
+    for (const src of sources) {
+      src.timer -= dt;
+      if (src.timer <= 0) {
+        if (spawn(src)) src.timer = -Math.log(1 - Math.random()) / rate(src);
+        else src.timer = 0.4;
+      }
+    }
+    for (const c of cars) { posAt(c.path, c.s, tmp); c.x = tmp.x; c.y = tmp.y; c.hx = tmp.hx; c.hy = tmp.hy; }
+
+    for (const c of cars) {
+      // Desired speed: slow down for the turn itself.
+      let v0 = VMAX;
+      const p = c.path;
+      if (p.turnStart >= 0 && c.s > p.turnStart - 45 && c.s < p.turnEnd) v0 = p.move === "L" ? V_LEFT : V_RIGHT;
+
+      // Nearest car ahead, found geometrically so merges and the intersection box are covered.
+      let gap = Infinity, dv = 0;
+      const strict = c.crossed && c.stuck > 3;
+      for (const o of cars) {
+        if (o === c) continue;
+        const dx = o.x - c.x, dy = o.y - c.y;
+        const f = dx * c.hx + dy * c.hy;
+        if (f <= 0 || f > 160) continue;
+        const hd = c.hx * o.hx + c.hy * o.hy;
+        if (hd < -0.3 || (strict && hd < 0.7)) continue; // oncoming traffic is never a leader
+        const lat = Math.abs(dx * c.hy - dy * c.hx);
+        if (lat > (c.w + o.w) / 2 + 2) continue;
+        const g = f - (c.len + o.len) / 2;
+        if (g < gap) { gap = g; dv = c.v - o.v * hd; }
+      }
+      let acc = idm(c.v, v0, gap, dv);
+
+      // Stop line.
+      const front = c.s + c.len / 2;
+      if (!c.crossed) {
+        const gStop = p.sStop - front;
+        const st = groupState(c.group);
+        let stop = false;
+        if (st === "g") c.committed = false;
+        else if (st === "y") {
+          if (!c.committed) { if (gStop > c.v * c.v / (2 * DEC) + 2) stop = true; else c.committed = true; }
+        } else stop = !c.committed;
+        if (stop) acc = Math.min(acc, idm(c.v, v0, gStop + 4, c.v));
+      }
+
+      c.braking = acc < -15 || c.v < 2;
+      c.v = Math.max(0, c.v + acc * dt);
+      c.s += c.v * dt;
+      if (!c.crossed && c.s + c.len / 2 > p.sStop + 1) c.crossed = true;
+      c.stuck = c.v < 3 ? c.stuck + dt : 0;
+    }
+    const before = cars.length;
+    cars = cars.filter(c => c.s < c.path.len - 2);
+    passed += before - cars.length;
+  }
+
+  // ---------- Drawing ----------
+  const cv = document.getElementById("cv"), ctx = cv.getContext("2d");
+  let scale = 1, scene = null;
+
+  function mulberry(a) { return () => { a |= 0; a = a + 0x6D2B79F5 | 0; let t2 = Math.imul(a ^ a >>> 15, 1 | a); t2 = t2 + Math.imul(t2 ^ t2 >>> 7, 61 | t2) ^ t2; return ((t2 ^ t2 >>> 14) >>> 0) / 4294967296; }; }
+
+  function rr(g, x, y, w, h, r) { g.beginPath(); g.roundRect ? g.roundRect(x, y, w, h, r) : g.rect(x, y, w, h); }
+
+  function arrowHead(g, px, py, ex, ey, size) {
+    const a = Math.atan2(ey - py, ex - px);
+    g.beginPath();
+    g.moveTo(ex + Math.cos(a) * size, ey + Math.sin(a) * size);
+    g.lineTo(ex + Math.cos(a + Math.PI / 2) * size * 0.85, ey + Math.sin(a + Math.PI / 2) * size * 0.85);
+    g.lineTo(ex + Math.cos(a - Math.PI / 2) * size * 0.85, ey + Math.sin(a - Math.PI / 2) * size * 0.85);
+    g.closePath(); g.fill();
+  }
+
+  function drawScene(g) {
+    const SIDEWALK = "#b9b7ae", ASPHALT = "#3a3e43", PARK = "#6c8a5b";
+    g.fillStyle = SIDEWALK; g.fillRect(0, 0, W, W);
+    // Asphalt
+    g.fillStyle = ASPHALT;
+    g.fillRect(C - R, 0, 2 * R, W); g.fillRect(0, C - R, W, 2 * R);
+
+    for (let k = 0; k < 4; k++) {
+      const rnd = mulberry(17 + k * 101);
+      g.save(); g.translate(C, C); g.rotate(k * Math.PI / 2);
+      // Rounded kerb at the corner
+      g.fillStyle = ASPHALT; g.fillRect(R - 0.5, R - 0.5, RC, RC);
+      g.fillStyle = SIDEWALK; g.beginPath(); g.arc(R + RC, R + RC, RC, 0, Math.PI * 2); g.fill();
+      g.fillRect(R + RC, R, 400, RC); g.fillRect(R, R + RC, RC, 400);
+      // Kerb edge
+      g.strokeStyle = "#d6d4cc"; g.lineWidth = 1.5;
+      g.beginPath(); g.moveTo(R, 420); g.lineTo(R, R + RC); g.arc(R + RC, R + RC, RC, Math.PI, 1.5 * Math.PI); g.lineTo(420, R); g.stroke();
+      // Block: park with a building
+      g.fillStyle = PARK; rr(g, R + SW, R + SW, 420, 420, 14); g.fill();
+      const bx = R + SW + 34 + rnd() * 30, by = R + SW + 34 + rnd() * 30, bw = 140 + rnd() * 90, bh = 110 + rnd() * 90;
+      g.fillStyle = "rgba(0,0,0,0.22)"; g.fillRect(bx + 7, by + 7, bw, bh);
+      g.fillStyle = ["#a7a29a", "#9aa1a6", "#b09a86", "#8f9a8e"][k]; g.fillRect(bx, by, bw, bh);
+      g.strokeStyle = "rgba(0,0,0,0.18)"; g.lineWidth = 1; g.strokeRect(bx + 10, by + 10, bw - 20, bh - 20);
+      g.fillStyle = "rgba(255,255,255,0.12)"; g.fillRect(bx + bw * 0.3, by + bh * 0.3, 18, 14);
+      // Trees along the sidewalk
+      for (let i = 0; i < 4; i++) {
+        const tx = R + SW + 14 + rnd() * 6, ty = R + SW + 90 + i * 70 + rnd() * 10;
+        for (const [ax, ay] of [[tx, ty], [ty, tx]]) {
+          if (ay > 395 || ax > 395) continue;
+          g.fillStyle = "rgba(0,0,0,0.2)"; g.beginPath(); g.arc(ax + 3, ay + 3, 11, 0, Math.PI * 2); g.fill();
+          g.fillStyle = "#4e6f3f"; g.beginPath(); g.arc(ax, ay, 11, 0, Math.PI * 2); g.fill();
+          g.fillStyle = "#5f8450"; g.beginPath(); g.arc(ax - 3, ay - 3, 6, 0, Math.PI * 2); g.fill();
+        }
+      }
+      g.restore();
+    }
+
+    // Road markings per approach, in the local northbound frame.
+    for (let k = 0; k < 4; k++) {
+      g.save(); g.translate(C, C); g.rotate(k * Math.PI / 2);
+      const WHITE = "#e9e9e4", YEL = "#e4b42b";
+      // Centre line: solid double near the junction, dashed further out.
+      g.fillStyle = YEL;
+      g.fillRect(-2.5, STOP, 1.6, 120); g.fillRect(0.9, STOP, 1.6, 120);
+      for (let y = STOP + 132; y < 420; y += 30) g.fillRect(-1, y, 2, 16);
+      // Lane dividers: incoming solid near stop line, then dashed; outgoing dashed.
+      g.fillStyle = WHITE;
+      g.fillRect(L - 1, STOP, 2, 90);
+      for (let y = STOP + 102; y < 420; y += 30) g.fillRect(L - 1, y, 2, 16);
+      for (let y = R + 26; y < 420; y += 30) g.fillRect(-L - 1, y, 2, 16);
+      // Stop line
+      g.fillRect(0, STOP - 2, 2 * L, 4);
+      // Zebra crossing
+      for (let x = -2 * L + 3; x < 2 * L - 2; x += 9) g.fillRect(x, R + 3, 5, 16);
+      // Lane arrows
+      g.strokeStyle = WHITE; g.lineWidth = 3; g.lineCap = "butt";
+      const ay = STOP + 46;
+      let x = 1.5 * L; // straight + right
+      g.beginPath(); g.moveTo(x - 2, ay + 30); g.lineTo(x - 2, ay + 6); g.stroke(); arrowHead(g, x - 2, ay + 10, x - 2, ay + 4, 5);
+      g.beginPath(); g.moveTo(x - 2, ay + 20); g.quadraticCurveTo(x - 2, ay + 13, x + 5, ay + 13); g.stroke(); arrowHead(g, x, ay + 13, x + 5, ay + 13, 4.5);
+      x = 0.5 * L; // left only
+      g.beginPath(); g.moveTo(x + 3, ay + 30); g.lineTo(x + 3, ay + 18); g.quadraticCurveTo(x + 3, ay + 10, x - 4, ay + 10); g.stroke(); arrowHead(g, x, ay + 10, x - 4, ay + 10, 5);
+      // Left-turn guide lines through the box
+      g.strokeStyle = "rgba(233,233,228,0.45)"; g.lineWidth = 1.5; g.setLineDash([5, 6]);
+      g.beginPath(); g.arc(-R, R, R, -Math.PI / 2, 0); g.stroke();
+      g.beginPath(); g.arc(-R, R, R + L, -Math.PI / 2, 0); g.stroke();
+      g.setLineDash([]);
+      g.restore();
+    }
+
+    // Compass
+    g.save(); g.translate(40, 44);
+    g.fillStyle = "rgba(20,24,28,0.55)"; g.beginPath(); g.arc(0, 0, 20, 0, Math.PI * 2); g.fill();
+    g.fillStyle = "#f2f2ee"; g.beginPath(); g.moveTo(0, -13); g.lineTo(6, 4); g.lineTo(0, 0); g.lineTo(-6, 4); g.closePath(); g.fill();
+    g.font = "600 11px 'Barlow Condensed', sans-serif"; g.textAlign = "center"; g.fillText("N", 0, 15);
+    g.restore();
+  }
+
+  const LAMP = {
+    r: ["#ff4a38", "#3a1714"], y: ["#ffbb22", "#3a2d10"], g: ["#2fe08a", "#0f2e1f"]
+  };
+
+  function drawHead(g, x, y, st, arrow) {
+    g.fillStyle = "#14171a"; rr(g, x, y, 14, 42, 3); g.fill();
+    g.strokeStyle = "#3b4248"; g.lineWidth = 1; g.stroke();
+    const on = { r: st === "r" || st === "ry", y: st === "y" || st === "ry", g: st === "g" };
+    ["r", "y", "g"].forEach((key, i) => {
+      const cx = x + 7, cy = y + 7 + i * 14, lit = on[key], [hot, dim] = LAMP[key];
+      if (arrow) {
+        g.fillStyle = "#0c0e10"; g.beginPath(); g.arc(cx, cy, 5.2, 0, Math.PI * 2); g.fill();
+        g.fillStyle = g.strokeStyle = lit ? hot : dim;
+        g.lineWidth = 1.8;
+        if (lit) { g.shadowColor = hot; g.shadowBlur = 10; }
+        g.beginPath(); g.moveTo(cx + 3, cy); g.lineTo(cx - 1, cy); g.stroke();
+        g.beginPath(); g.moveTo(cx - 3.8, cy); g.lineTo(cx - 0.5, cy - 2.8); g.lineTo(cx - 0.5, cy + 2.8); g.closePath(); g.fill();
+      } else {
+        g.fillStyle = lit ? hot : dim;
+        if (lit) { g.shadowColor = hot; g.shadowBlur = 12; }
+        g.beginPath(); g.arc(cx, cy, 5.2, 0, Math.PI * 2); g.fill();
+      }
+      g.shadowBlur = 0;
+    });
+  }
+
+  function drawSignals(g) {
+    for (let k = 0; k < 4; k++) {
+      const ns = k % 2 === 0 ? "NS" : "EW";
+      g.save(); g.translate(C, C); g.rotate(k * Math.PI / 2);
+      const x0 = R + 5, y0 = STOP + 2;
+      g.fillStyle = "rgba(0,0,0,0.25)"; rr(g, x0 - 1, y0 + 2, 40, 48, 4); g.fill();
+      g.fillStyle = "#8d9196"; rr(g, x0 - 3, y0 - 1, 40, 48, 4); g.fill();
+      drawHead(g, x0 + 1, y0 + 2, groupState(ns + "_L"), true);
+      drawHead(g, x0 + 19, y0 + 2, groupState(ns + "_T"), false);
+      g.restore();
+    }
+  }
+
+  let blink = 0;
+  function drawCar(g, c) {
+    g.save(); g.translate(c.x, c.y); g.rotate(Math.atan2(c.hy, c.hx) + Math.PI / 2);
+    const hl = c.len / 2, hw = c.w / 2;
+    g.fillStyle = "rgba(0,0,0,0.3)"; rr(g, -hw + 1.5, -hl + 2, c.w, c.len, 3); g.fill();
+    g.fillStyle = c.color; rr(g, -hw, -hl, c.w, c.len, 3); g.fill();
+    g.strokeStyle = "rgba(0,0,0,0.35)"; g.lineWidth = 0.8; g.stroke();
+    // Glass
+    g.fillStyle = "rgba(25,35,45,0.75)";
+    g.fillRect(-hw + 1.6, -hl + 5, c.w - 3.2, 4);
+    g.fillRect(-hw + 1.6, hl - 6.5, c.w - 3.2, 3);
+    g.fillStyle = "rgba(255,255,255,0.12)"; g.fillRect(-hw + 2, -hl + 9.5, c.w - 4, hl * 2 - 17);
+    // Brake lights
+    g.fillStyle = c.braking ? "#ff3b2a" : "#7a1d16";
+    if (c.braking) { g.shadowColor = "#ff3b2a"; g.shadowBlur = 6; }
+    g.fillRect(-hw + 0.5, hl - 1.6, 3, 1.6); g.fillRect(hw - 3.5, hl - 1.6, 3, 1.6);
+    g.shadowBlur = 0;
+    // Head lights
+    g.fillStyle = "#fff6d8"; g.fillRect(-hw + 0.8, -hl, 2.6, 1.4); g.fillRect(hw - 3.4, -hl, 2.6, 1.4);
+    // Indicators
+    if (c.move !== "S" && c.s > c.path.sStop - 160 && c.s < c.path.turnEnd && blink < 0.5) {
+      const sx = c.move === "L" ? -hw : hw - 2.2;
+      g.fillStyle = "#ffae1a"; g.shadowColor = "#ffae1a"; g.shadowBlur = 6;
+      g.fillRect(sx, -hl + 0.5, 2.2, 2.2); g.fillRect(sx, hl - 2.7, 2.2, 2.2);
+      g.shadowBlur = 0;
+    }
+    g.restore();
+  }
+
+  function render() {
+    if (!scene) return;
+    ctx.setTransform(1, 0, 0, 1, 0, 0);
+    ctx.drawImage(scene, 0, 0);
+    ctx.setTransform(scale, 0, 0, scale, 0, 0);
+    for (const c of cars) drawCar(ctx, c);
+    drawSignals(ctx);
+  }
+
+  function resize() {
+    const r = cv.getBoundingClientRect();
+    const dpr = Math.min(window.devicePixelRatio || 1, 2.5);
+    const px = Math.max(200, Math.round(r.width * dpr));
+    if (cv.width === px && scene) return;
+    cv.width = px; cv.height = px; scale = px / W;
+    scene = document.createElement("canvas"); scene.width = px; scene.height = px;
+    const g = scene.getContext("2d"); g.setTransform(scale, 0, 0, scale, 0, 0); drawScene(g);
+    render();
+  }
+
+  // ---------- Panel ----------
+  const $ = id => document.getElementById(id);
+  const PICT = {
+    T: '<path class="mv" d="M23 38 V6" marker-end="url(#ah)"/><path class="mv" d="M23 30 Q23 23 30 23 H36" marker-end="url(#ah)"/><path class="mv" d="M17 2 V34" marker-end="url(#ah)"/><path class="mv" d="M17 10 Q17 17 10 17 H4" marker-end="url(#ah)"/>',
+    L: '<path class="mv" d="M23 38 V27 Q23 17 13 17 H5" marker-end="url(#ah)"/><path class="mv" d="M17 2 V13 Q17 23 27 23 H35" marker-end="url(#ah)"/>'
+  };
+  function pictogram(i) {
+    const rotA = i >= 2 ? ' transform="rotate(90 20 20)"' : "";
+    return '<svg class="pict" viewBox="0 0 40 40" aria-hidden="true"><rect class="road" x="13" y="0" width="14" height="40"/><rect class="road" x="0" y="13" width="40" height="14"/><g' + rotA + '>' + (i % 2 ? PICT.L : PICT.T) + '</g></svg>';
+  }
+  const list = $("phaseList");
+  list.innerHTML = PHASES.map((p, i) => '<li id="ph' + i + '"><span class="pnum">' + (i + 1) + '</span>' + pictogram(i) + '<span class="pname"></span><span class="chip" data-s="r"></span></li>').join("");
+
+  function applyLang() {
+    document.documentElement.lang = lang === "no" ? "nb" : "en";
+    document.querySelectorAll("[data-i18n]").forEach(el => { el.textContent = t()[el.dataset.i18n]; });
+    PHASES.forEach((p, i) => { $("ph" + i).querySelector(".pname").textContent = t().names[i]; });
+    $("lang-no").setAttribute("aria-pressed", lang === "no");
+    $("lang-en").setAttribute("aria-pressed", lang === "en");
+    cv.setAttribute("aria-label", t().aria);
+    lastKey = ""; updatePanel(true);
+  }
+
+  let lastKey = "", running = true, speed = 1;
+  function updatePanel(force) {
+    const dur = stageDur(), left = Math.max(0, dur - ctrl.t);
+    $("barFill").style.width = Math.min(100, ctrl.t / dur * 100).toFixed(1) + "%";
+    $("timer").textContent = (ctrl.stage === "g" && mode === "actuated") ? t().maxLeft.replace("{s}", left.toFixed(0)) : left.toFixed(1) + " s";
+    const key = ctrl.p + ctrl.stage + mode + lang + ctrl.skipped.join() + running;
+    if (key !== lastKey || force) {
+      lastKey = key;
+      $("nowLabel").textContent = t().now.replace("{n}", ctrl.p + 1);
+      $("nowPhase").textContent = t().names[ctrl.p];
+      const chip = $("stageChip"); chip.dataset.s = ctrl.stage; chip.textContent = t().stage[ctrl.stage];
+      PHASES.forEach((p, i) => {
+        const li = $("ph" + i), st = i === ctrl.p ? ctrl.stage : "r";
+        li.classList.toggle("active", i === ctrl.p);
+        li.classList.toggle("skipped", !!ctrl.skipped[i]);
+        const c = li.querySelector(".chip"); c.dataset.s = st; c.textContent = i === ctrl.p ? t().stage[st] : t().state.r;
+      });
+      $("modeNote").textContent = mode === "actuated" ? t().noteAct : t().noteFix;
+      $("playBtn").textContent = running ? t().pause : t().play;
+      $("mode-act").setAttribute("aria-pressed", mode === "actuated");
+      $("mode-fix").setAttribute("aria-pressed", mode === "fixed");
+    }
+    $("statPassed").textContent = passed;
+    let waiting = 0; for (const c of cars) if (!c.crossed && c.v < 8) waiting++;
+    $("statWaiting").textContent = waiting;
+  }
+
+  $("playBtn").addEventListener("click", () => { running = !running; updatePanel(true); });
+  $("speedSeg").addEventListener("click", e => {
+    const b = e.target.closest("button"); if (!b) return;
+    speed = parseFloat(b.dataset.speed);
+    $("speedSeg").querySelectorAll("button").forEach(x => x.setAttribute("aria-pressed", x === b));
+  });
+  $("modeSeg").addEventListener("click", e => {
+    const b = e.target.closest("button"); if (!b) return;
+    mode = b.dataset.mode; ctrl.skipped = [false, false, false, false]; updatePanel(true);
+  });
+  $("density").addEventListener("input", e => { density = parseFloat(e.target.value); $("densityOut").textContent = Math.round(density * 100) + " %"; });
+  document.querySelectorAll("[data-lang]").forEach(b => b.addEventListener("click", () => {
+    lang = b.dataset.lang; try { localStorage.setItem("lyskryss-lang", lang); } catch (e) {}
+    applyLang();
+  }));
+
+  // ---------- Run ----------
+  for (let i = 0; i < 900; i++) step(0.05); // warm up so the first frame shows traffic
+  passed = 0;
+  if (window.matchMedia && matchMedia("(prefers-reduced-motion: reduce)").matches) running = false;
+
+  new ResizeObserver(resize).observe(cv);
+  applyLang();
+  resize();
+
+  let last = performance.now();
+  function frame(now) {
+    const real = Math.min(0.05, (now - last) / 1000); last = now;
+    if (running) {
+      const dt = real * speed, n = Math.ceil(dt / 0.02);
+      for (let i = 0; i < n; i++) step(dt / n);
+      blink = (blink + dt * 1.6) % 1;
+    }
+    render(); updatePanel(false);
+    requestAnimationFrame(frame);
+  }
+  requestAnimationFrame(frame);
+})();
+</script>
